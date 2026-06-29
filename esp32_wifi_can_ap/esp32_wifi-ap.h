@@ -1,6 +1,6 @@
 #include "HardwareSerial.h"
-#ifndef ESP32WIFISERIALSERVER_H
-#define ESP32WIFISERIALSERVER_H
+#ifndef ESP32_UDP_WIFISERIAL_SERVER_H
+#define ESP32_UDP_WIFISERIAL_SERVER_H
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -269,4 +269,4 @@ public:
     }
 };
 
-#endif ESP32WIFISERIALSERVER_H
+#endif ESP32_UDP_WIFISERIAL_SERVER_H
