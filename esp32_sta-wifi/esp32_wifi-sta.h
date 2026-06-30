@@ -19,6 +19,7 @@ private:
 
     WiFiUDP wifi_udp;
     volatile bool device_connected = false; // UDP无连接，此处映射为 WiFi 连接状态
+    volatile bool connect_changed = false;
 
     static const size_t MAX_BUFFER_SIZE = 768;
     char tx_buffer[MAX_BUFFER_SIZE];
@@ -33,10 +34,33 @@ private:
     uint8_t rx_q_count = 0;
 
     const unsigned long batch_interval_ms = 4;
-    unsigned long last_send_time = 0;
     const unsigned long ping_interval_ms = 800;
+    const unsigned long reconnect_interval_ms = 3000;
+    unsigned long last_send_time = 0;
     unsigned long last_recv_time = 0;
+    unsigned long last_reconnect_time = 0;
 
+    void check_reconnect(unsigned long current_time)
+    {
+        if (this->device_connected)
+        {
+            if (current_time - this->last_recv_time > this->reconnect_interval_ms)
+            {
+                this->device_connected = false;
+                this->connect_changed = true;
+                WiFi.disconnect();
+                WiFi.reconnect();
+            }
+        }
+        // else
+        // {
+        //     if (current_time - this->last_reconnect_time > this->reconnect_interval_ms)
+        //     {
+        //         this->last_reconnect_time = current_time;
+        //         WiFi.reconnect();
+        //     }
+        // }
+    }
 
     void ping_udp(unsigned long current_time)
     {
@@ -150,7 +174,7 @@ public:
     {
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
-        WiFi.setTxPower(WIFI_POWER_15dBm);
+        WiFi.setTxPower(WIFI_POWER_13dBm); // 20, 19, 18, 17, 15, 13, 11
         WiFi.setAutoReconnect(true);
 
         // 注册 WiFi 事件回调 (使用 C++11 Lambda 表达式捕获 this 指针)
@@ -159,12 +183,19 @@ public:
             switch (event) 
             {
                 case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+                {
                     this->device_connected = true;
-                    this->last_recv_time = millis();
+                    this->connect_changed = true;
+
+                    unsigned long current_time = millis();
+                    this->last_recv_time = current_time;
+                    this->last_reconnect_time = current_time;
                     break;
+                }
 
                 case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
                     this->device_connected = false;
+                    this->connect_changed = true;
                     break;
 
                 default:
@@ -172,7 +203,7 @@ public:
             }
         });
 
-
+        
         WiFi.begin(this->wifi_ssid, this->wifi_password);
         this->wifi_udp.begin(udp_port); // 客户端绑定本地端口监听回包
     }
@@ -180,6 +211,13 @@ public:
     bool check_connect() 
     { 
         return this->device_connected; 
+    }
+
+    bool check_connect_chang()
+    {
+        bool ret = this->connect_changed;
+        this->connect_changed = false;
+        return ret;
     }
 
     bool send_message(const char* data) 
@@ -219,6 +257,8 @@ public:
     void loop_process() 
     {
         unsigned long current_time = millis();
+
+        check_reconnect(current_time);
 
         if (this->device_connected) 
         {

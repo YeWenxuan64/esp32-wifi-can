@@ -22,7 +22,7 @@ private:
     IPAddress remote_ip;
     uint16_t remote_port = 0;
     volatile bool device_connected = false;
-    bool device_disconnected = false;
+    volatile bool connect_changed = false;
     unsigned long last_peer_activity = 0;
     const unsigned long peer_timeout_ms = 3000; // UDP无连接，超时未通信视为断开
 
@@ -40,8 +40,9 @@ private:
     int packet_size = 0;
 
     const unsigned long batch_interval_ms = 4;
+    const unsigned long ping_interval_ms = 800;
     unsigned long last_send_time = 0;
-
+    unsigned long last_recv_time = 0;
 
     // 更新对端状态 & 模拟连接/断开
     void handle_udp_peer(unsigned long current_time)
@@ -51,29 +52,42 @@ private:
         {
             IPAddress current_ip = udp.remoteIP();
             uint16_t current_port = udp.remotePort();
+            this->last_peer_activity = current_time;
 
             // 新设备接入或设备切换
-            if (!device_connected || current_ip != remote_ip || current_port != remote_port)
+            if (!this->device_connected || current_ip != this->remote_ip || current_port != this->remote_port)
             {
-                if (device_connected) device_disconnected = true;
-                remote_ip = current_ip;
-                remote_port = current_port;
-                device_connected = true;
+                this->remote_ip = current_ip;
+                this->remote_port = current_port;
+                this->device_connected = true;
+                this->connect_changed = true;
+
+                this->last_recv_time = current_time;
             }
-            this->last_peer_activity = current_time;
-            device_disconnected = false;
         }
 
-        if (device_connected)
+        if (this->device_connected)
         {
             // 超时检测（UDP 无 FIN/RST，需应用层模拟断开）
-            if (current_time - this->last_peer_activity > peer_timeout_ms)
+            if (udp.available())
             {
-                device_connected = false;
-                device_disconnected = true;
+                this->last_recv_time = current_time;
+            }
+
+            else if (current_time - this->last_recv_time > this->peer_timeout_ms)
+            {
+                this->device_connected = false;
+                this->connect_changed = true;
             }
         }
+    }
 
+    void ping_udp(unsigned long current_time)
+    {
+        if (current_time - this->last_send_time > this->ping_interval_ms)
+        {
+            this->send_message("\r");
+        }
     }
 
     void read_udp_data()
@@ -87,8 +101,7 @@ private:
         bool is_dropping_line = false;
         size_t rx_len = 0;
 
-
-        while (this->udp.available()) 
+        while (udp.available()) 
         {
             char c = this->udp.read();
 
@@ -189,11 +202,12 @@ public:
             {
                 case ARDUINO_EVENT_WIFI_STA_GOT_IP:
                     this->device_connected = true;
+                    // this->connect_changed = true;
                     break;
 
                 case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
                     this->device_connected = false;
-                    this->device_disconnected = true;
+                    // this->connect_changed = true;
                     break;
 
                 default:
@@ -214,10 +228,10 @@ public:
         return device_connected; 
     }
 
-    bool check_disconnect()
+    bool check_connect_chang()
     {
-        bool ret = device_disconnected;
-        device_disconnected = false;
+        bool ret = this->connect_changed;
+        this->connect_changed = false;
         return ret;
     }
 
@@ -270,6 +284,7 @@ public:
         if (device_connected) 
         {
             read_udp_data();
+            ping_udp(current_time);
             send_udp_data(current_time);
         }
     }

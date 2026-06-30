@@ -517,9 +517,10 @@ bool read_wifi_serial()
         neonpixel.trigger(true, false, false);
     }
 
-    if (wifi_serial.check_disconnect())
+    if (wifi_serial.check_connect_chang())
     {
         const char* msg ="C\r\0";
+        //Serial.println("connect_changed");
         parse_serial_cmd(msg);
     }
 
