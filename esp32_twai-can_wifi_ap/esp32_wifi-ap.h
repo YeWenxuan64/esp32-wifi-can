@@ -41,7 +41,7 @@ private:
 
     const unsigned long batch_interval_ms = 4;
     unsigned long last_send_time = 0;
-    unsigned long last_get_client_count_time = 0;
+
 
     // 更新对端状态 & 模拟连接/断开
     void handle_udp_peer(unsigned long current_time)
@@ -74,14 +74,6 @@ private:
             }
         }
 
-        // if (current_time - this->last_get_client_count_time > 1000)
-        // {
-        //     this->last_get_client_count_time = current_time;
-        //     uint8_t client_count = WiFi.softAPgetStationNum();
-
-        //     Serial.print("当前连接的客户端数量: ");
-        //     Serial.println(client_count);
-        // }
     }
 
     void read_udp_data()

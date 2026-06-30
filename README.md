@@ -1,4 +1,4 @@
-# esp32-WiFi-CAN-Bridge
+# esp32-wifi-can
 # ESP32 无线 slCAN 总线桥接器
 
 ## 📖 概述

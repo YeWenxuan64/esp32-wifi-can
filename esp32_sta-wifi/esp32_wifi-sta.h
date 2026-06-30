@@ -34,26 +34,13 @@ private:
 
     const unsigned long batch_interval_ms = 4;
     unsigned long last_send_time = 0;
-
-    unsigned long last_reconnect_time = 0;
-    const unsigned long reconnect_interval = 3000;
-    unsigned long last_ping_time = 0;
+    const unsigned long ping_interval_ms = 800;
     unsigned long last_recv_time = 0;
 
-    // void reconnect_wifi(unsigned long current_time)
-    // {
-    //     if (current_time - this->last_reconnect_time > this->reconnect_interval)
-    //     {
-    //         this->last_reconnect_time = current_time;
-    //         //WiFi.disconnect();
-    //         //Serial.println("try reconnect bec not connect");
-    //         //WiFi.reconnect();
-    //     }
-    // }
 
     void ping_udp(unsigned long current_time)
     {
-        if (current_time - this->last_send_time >= 1000)
+        if (current_time - this->last_send_time > this->ping_interval_ms)
         {
             this->send_message("\r");
         }
@@ -187,8 +174,6 @@ public:
 
 
         WiFi.begin(this->wifi_ssid, this->wifi_password);
-        this->last_reconnect_time = millis();
-
         this->wifi_udp.begin(udp_port); // 客户端绑定本地端口监听回包
     }
 
@@ -240,18 +225,7 @@ public:
             read_udp_data(current_time);
             ping_udp(current_time);
             send_udp_data(current_time);
-
-            // if (current_time - this->last_recv_time > this->reconnect_interval)
-            // {   
-            //     this->device_connected = false;
-            //     //WiFi.disconnect();
-            //     //Serial.println("no ping");
-            // }
         }
-        // else
-        // {
-        //     reconnect_wifi(current_time);
-        // }
     }
 };
 
