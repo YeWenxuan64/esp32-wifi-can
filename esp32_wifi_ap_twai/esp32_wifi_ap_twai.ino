@@ -15,7 +15,7 @@
 
 #define AP_WIFI_SSID "ESP32-CAN-WIFI"
 #define AP_WIFI_PASSWORD "12345678"
-#define TCP_SERVER_PORT 8266
+#define SERVER_PORT 8266
 
 #define NEOPIXEL_PIN 10
 
@@ -24,7 +24,7 @@
 // ========== 全局对象实例 ==========
 ESP32CANV2 slcan(TWAI_TX_PIN, TWAI_RX_PIN);
 ESP32NeoPixel neonpixel(NEOPIXEL_PIN, 20);
-ESP32WiFiSerialServerUDP wifi_serial(AP_WIFI_SSID, AP_WIFI_PASSWORD, TCP_SERVER_PORT);
+ESP32WiFiSerialServerUDP wifi_serial(AP_WIFI_SSID, AP_WIFI_PASSWORD, SERVER_PORT);
 
 
 

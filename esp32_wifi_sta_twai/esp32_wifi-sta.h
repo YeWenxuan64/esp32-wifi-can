@@ -35,10 +35,12 @@ private:
 
     const unsigned long batch_interval_ms = 4;
     const unsigned long ping_interval_ms = 800;
-    const unsigned long reconnect_interval_ms = 5000;
+    const unsigned long reconnect_interval_ms = 4000;
     unsigned long last_send_time = 0;
     unsigned long last_recv_time = 0;
     unsigned long last_reconnect_time = 0;
+
+    unsigned long last_print_time = 0;
 
     void check_reconnect(unsigned long current_time)
     {
@@ -52,13 +54,23 @@ private:
                 WiFi.reconnect();
             }
         }
-        // else
+        else
+        {
+            if (current_time - this->last_reconnect_time > this->reconnect_interval_ms)
+            {
+                if (current_time - this->last_recv_time > this->reconnect_interval_ms)
+                {
+                    this->last_reconnect_time = current_time;
+                    WiFi.reconnect();
+                }
+            }
+        }
+
+        // if (current_time - last_print_time > 1000)
         // {
-        //     if (current_time - this->last_reconnect_time > this->reconnect_interval_ms)
-        //     {
-        //         this->last_reconnect_time = current_time;
-        //         WiFi.reconnect();
-        //     }
+        //     last_print_time = current_time;
+        //     Serial.println(WiFi.RSSI());
+            
         // }
     }
 
@@ -174,7 +186,7 @@ public:
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
         WiFi.setTxPower(WIFI_POWER_15dBm); // 20, 19, 18, 17, 15, 13, 11
-        WiFi.setAutoReconnect(true);
+        WiFi.setAutoReconnect(false);
 
         // 注册 WiFi 事件回调 (使用 C++11 Lambda 表达式捕获 this 指针)
         WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) 
@@ -193,10 +205,10 @@ public:
                     break;
                 }
 
-                case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-                    this->device_connected = false;
-                    this->connect_changed = true;
-                    break;
+                // case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+                //     this->device_connected = false;
+                //     this->connect_changed = true;
+                //     break;
 
                 default:
                     break;

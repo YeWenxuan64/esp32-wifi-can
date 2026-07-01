@@ -16,15 +16,14 @@ class ESP32WiFiSerialServerUDP
 private:
     const char* wifi_ssid;
     const char* wifi_password;
-    uint16_t udp_port;
+    IPAddress gateway_ip = IPAddress(192, 168, 4, 1);
+    uint16_t udp_port = 8266;
     
     WiFiUDP udp;
     IPAddress remote_ip;
     uint16_t remote_port = 0;
     volatile bool device_connected = false;
     volatile bool connect_changed = false;
-    unsigned long last_peer_activity = 0;
-    const unsigned long peer_timeout_ms = 3000; // UDP无连接，超时未通信视为断开
 
     static const size_t MAX_BUFFER_SIZE = 768;
     char tx_buffer[MAX_BUFFER_SIZE];
@@ -41,8 +40,10 @@ private:
 
     const unsigned long batch_interval_ms = 4;
     const unsigned long ping_interval_ms = 800;
+    const unsigned long peer_timeout_ms = 4000; // UDP无连接，超时未通信视为断开
     unsigned long last_send_time = 0;
     unsigned long last_recv_time = 0;
+
 
     // 更新对端状态 & 模拟连接/断开
     void handle_udp_peer(unsigned long current_time)
@@ -51,30 +52,26 @@ private:
         if (this->packet_size > 0)
         {
             IPAddress current_ip = udp.remoteIP();
-            uint16_t current_port = udp.remotePort();
-            this->last_peer_activity = current_time;
 
-            // 新设备接入或设备切换
-            if (!this->device_connected || current_ip != this->remote_ip || current_port != this->remote_port)
+            if (current_ip != this->gateway_ip)
             {
-                this->remote_ip = current_ip;
-                this->remote_port = current_port;
-                this->device_connected = true;
-                this->connect_changed = true;
+                uint16_t current_port = udp.remotePort();
+
+                if (!this->device_connected || current_ip != this->remote_ip || current_port != this->remote_port)
+                {
+                    // 新设备接入或设备切换
+                    this->remote_ip = current_ip;
+                    this->remote_port = current_port;
+                    this->device_connected = true;
+                    this->connect_changed = true;
+                }
 
                 this->last_recv_time = current_time;
             }
         }
-
-        if (this->device_connected)
+        else if (this->device_connected)
         {
-            // 超时检测（UDP 无 FIN/RST，需应用层模拟断开）
-            if (udp.available())
-            {
-                this->last_recv_time = current_time;
-            }
-
-            else if (current_time - this->last_recv_time > this->peer_timeout_ms)
+            if (current_time - this->last_recv_time > this->peer_timeout_ms)
             {
                 this->device_connected = false;
                 this->connect_changed = true;
@@ -175,7 +172,6 @@ private:
 
                 tx_len = 0;
                 last_send_time = current_time;
-                last_peer_activity = current_time; // 发送也刷新活跃时间
             }
         }
     }
@@ -200,15 +196,18 @@ public:
         {
             switch (event) 
             {
-                case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+                case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
                     this->device_connected = true;
                     // this->connect_changed = true;
+                    this->last_recv_time = millis();
+                    // Serial.println("connect call");
                     break;
 
-                case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-                    this->device_connected = false;
-                    // this->connect_changed = true;
-                    break;
+                // case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+                //     this->device_connected = false;
+                //     // this->connect_changed = true;
+                //     // Serial.println("disconnect call");
+                //     break;
 
                 default:
                     break;
@@ -216,9 +215,9 @@ public:
         });
 
 
-        IPAddress gateway(192, 168, 4, 1);
-        WiFi.softAPConfig(gateway, gateway, IPAddress(255, 255, 255, 0));
-        WiFi.softAP(wifi_ssid, wifi_password, 6, 0, 4); // 信道6, 不隐藏, 最大4连接
+        
+        WiFi.softAPConfig(this->gateway_ip, this->gateway_ip, IPAddress(255, 255, 255, 0));
+        WiFi.softAP(wifi_ssid, wifi_password, 11, 0, 4); // 信道11, 不隐藏, 最大4连接
 
         udp.begin(udp_port);
     }
