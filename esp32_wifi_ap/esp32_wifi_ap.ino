@@ -1,23 +1,28 @@
 #include <Arduino.h>
 
-#include <esp32_wifi-sta.h>
 #include <esp32_neopixel-led.h>
+#include <esp32_wifi-ap.h>
 
-#define BUFFER_SIZE 96
+
+
+// ========== 配置参数 ==========
+#define BAUD_RATE 115200 // 串口通信波特率
+#define BUFFER_SIZE 128   // 串口接收缓冲区大小
+
+
+
 #define AP_WIFI_SSID "ESP32-CAN-WIFI"
 #define AP_WIFI_PASSWORD "12345678"
-#define SERVER_PORT 8266
+#define TCP_SERVER_PORT 8266
 
 #define NEOPIXEL_PIN 10
 
 
 
+// ========== 全局对象实例 ==========
+ESP32NeoPixel neonpixel(NEOPIXEL_PIN, 20);
+ESP32WiFiSerialServerUDP wifi_serial(AP_WIFI_SSID, AP_WIFI_PASSWORD, TCP_SERVER_PORT);
 
-// ================= 全局实例化 =================
-ESP32NeoPixel neonpixel(NEOPIXEL_PIN, 10);   // PIN 10 NeoPixel
-
-// 参数对应你的 AP 机配置：SSID, 密码, AP IP地址(192.168.4.1), 端口 8266
-ESP32WiFiSerialClientUDP WiFi_Client(AP_WIFI_SSID, AP_WIFI_PASSWORD, SERVER_PORT);
 
 
 
@@ -62,7 +67,7 @@ bool read_usb_serial()
         serialbuf[bufidx] = '\0';  // 添加字符串结束符，确保是合法 C 字符串
         bufidx = 0;
 
-        WiFi_Client.send_message(serialbuf);
+        wifi_serial.send_message(serialbuf);
         return true;
     }
 
@@ -76,17 +81,17 @@ void setup() {
     //Serial1.begin(115200, SERIAL_8N1, 9, 10);
     //Serial1.println("hello");
     neonpixel.begin();
-    WiFi_Client.begin();
+    wifi_serial.begin();
 }
 
 void loop() 
 {
     // 必须高频调用，确保 TCP 通信和网络状态机不被阻塞
-    WiFi_Client.loop_process();
+    wifi_serial.loop_process();
 
 
     // 逻辑：将串口输入的数据通过 WiFi 发送
-    if (WiFi_Client.check_connect())
+    if (wifi_serial.check_connect())
     {
         if (read_usb_serial())
         {
@@ -99,7 +104,7 @@ void loop()
     }
 
     // 逻辑：处理接收到的 WiFi 数据并打印到串口
-    const char* msg = WiFi_Client.recv_message();
+    const char* msg = wifi_serial.recv_message();
     if (msg[0] != '\0') 
     {
         Serial.print(msg);

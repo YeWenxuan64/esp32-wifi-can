@@ -1,25 +1,30 @@
-#ifndef ESP32_UDP_WIFISERIAL_CLIENT_H
-#define ESP32_UDP_WIFISERIAL_CLIENT_H
+#include "HardwareSerial.h"
+#ifndef ESP32_UDP_WIFISERIAL_SERVER_H
+#define ESP32_UDP_WIFISERIAL_SERVER_H
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <lwip/sockets.h>
 #include <WiFiUdp.h>
 
 
 
 
-class ESP32WiFiSerialClientUDP
+class ESP32WiFiSerialServerUDP
 {
 private:
     const char* wifi_ssid;
     const char* wifi_password;
-    IPAddress server_ip = IPAddress(192, 168, 4, 1);
     uint16_t udp_port;
-
-    WiFiUDP wifi_udp;
-    volatile bool device_connected = false; // UDP无连接，此处映射为 WiFi 连接状态
+    
+    WiFiUDP udp;
+    IPAddress remote_ip;
+    uint16_t remote_port = 0;
+    volatile bool device_connected = false;
     volatile bool connect_changed = false;
+    unsigned long last_peer_activity = 0;
+    const unsigned long peer_timeout_ms = 5000; // UDP无连接，超时未通信视为断开
 
     static const size_t MAX_BUFFER_SIZE = 768;
     char tx_buffer[MAX_BUFFER_SIZE];
@@ -32,34 +37,49 @@ private:
     uint8_t rx_q_head = 0;
     uint8_t rx_q_tail = 0;
     uint8_t rx_q_count = 0;
+    int packet_size = 0;
 
     const unsigned long batch_interval_ms = 4;
     const unsigned long ping_interval_ms = 800;
-    const unsigned long reconnect_interval_ms = 5000;
     unsigned long last_send_time = 0;
     unsigned long last_recv_time = 0;
-    unsigned long last_reconnect_time = 0;
 
-    void check_reconnect(unsigned long current_time)
+    // 更新对端状态 & 模拟连接/断开
+    void handle_udp_peer(unsigned long current_time)
     {
+        this->packet_size = udp.parsePacket();
+        if (this->packet_size > 0)
+        {
+            IPAddress current_ip = udp.remoteIP();
+            uint16_t current_port = udp.remotePort();
+            this->last_peer_activity = current_time;
+
+            // 新设备接入或设备切换
+            if (!this->device_connected || current_ip != this->remote_ip || current_port != this->remote_port)
+            {
+                this->remote_ip = current_ip;
+                this->remote_port = current_port;
+                this->device_connected = true;
+                this->connect_changed = true;
+
+                this->last_recv_time = current_time;
+            }
+        }
+
         if (this->device_connected)
         {
-            if (current_time - this->last_recv_time > this->reconnect_interval_ms)
+            // 超时检测（UDP 无 FIN/RST，需应用层模拟断开）
+            if (udp.available())
+            {
+                this->last_recv_time = current_time;
+            }
+
+            else if (current_time - this->last_recv_time > this->peer_timeout_ms)
             {
                 this->device_connected = false;
                 this->connect_changed = true;
-                WiFi.disconnect();
-                WiFi.reconnect();
             }
         }
-        // else
-        // {
-        //     if (current_time - this->last_reconnect_time > this->reconnect_interval_ms)
-        //     {
-        //         this->last_reconnect_time = current_time;
-        //         WiFi.reconnect();
-        //     }
-        // }
     }
 
     void ping_udp(unsigned long current_time)
@@ -70,21 +90,20 @@ private:
         }
     }
 
-    void read_udp_data(unsigned long current_time)
+    void read_udp_data()
     {
-        int packet_size = wifi_udp.parsePacket();
-        if (packet_size <= 0) 
+        // parsePacket() 已在 handle_udp_peer 调用，此处直接读取当前包数据
+        if (this->packet_size <= 0) 
         {
             return;
         }
 
         bool is_dropping_line = false;
         size_t rx_len = 0;
-        this->last_recv_time = current_time;
 
-        while (this->wifi_udp.available()) 
+        while (udp.available()) 
         {
-            char c = this->wifi_udp.read();
+            char c = this->udp.read();
 
             if (c == '\r' || c == '\n')
             {
@@ -142,27 +161,27 @@ private:
                 }
             }
         }
-
     }
 
     void send_udp_data(unsigned long current_time)
     {
-        if (current_time - this->last_send_time >= this->batch_interval_ms)
+        if (tx_len > 0 && device_connected)
         {
-            if (this->device_connected && this->tx_len > 0)
+            if (current_time - last_send_time >= batch_interval_ms)
             {
-                this->wifi_udp.beginPacket(this->server_ip, this->udp_port);
-                this->wifi_udp.write((const uint8_t*)tx_buffer, tx_len);
-                this->wifi_udp.endPacket();
+                udp.beginPacket(remote_ip, remote_port);
+                udp.write((const uint8_t*)tx_buffer, tx_len);
+                udp.endPacket(); // UDP 发送立即返回，不阻塞
 
-                this->tx_len = 0;
-                this->last_send_time = current_time;
+                tx_len = 0;
+                last_send_time = current_time;
+                last_peer_activity = current_time; // 发送也刷新活跃时间
             }
         }
     }
 
 public:
-    ESP32WiFiSerialClientUDP(const char* ssid, const char* password, uint16_t port)
+    ESP32WiFiSerialServerUDP(const char* ssid, const char* password, uint16_t port)
     {
         this->wifi_ssid = ssid;
         this->wifi_password = password;
@@ -171,10 +190,10 @@ public:
 
     void begin() 
     {
-        WiFi.mode(WIFI_STA);
+        WiFi.mode(WIFI_AP);
         WiFi.setSleep(false);
+        esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
         WiFi.setTxPower(WIFI_POWER_15dBm); // 20, 19, 18, 17, 15, 13, 11
-        WiFi.setAutoReconnect(true);
 
         // 注册 WiFi 事件回调 (使用 C++11 Lambda 表达式捕获 this 指针)
         WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) 
@@ -182,20 +201,13 @@ public:
             switch (event) 
             {
                 case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-                {
                     this->device_connected = true;
-                    this->connect_changed = true;
-                    this->server_ip = WiFi.gatewayIP();
-
-                    unsigned long current_time = millis();
-                    this->last_recv_time = current_time;
-                    this->last_reconnect_time = current_time;
+                    // this->connect_changed = true;
                     break;
-                }
 
                 case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
                     this->device_connected = false;
-                    this->connect_changed = true;
+                    // this->connect_changed = true;
                     break;
 
                 default:
@@ -203,14 +215,17 @@ public:
             }
         });
 
-        
-        WiFi.begin(this->wifi_ssid, this->wifi_password);
-        this->wifi_udp.begin(udp_port); // 客户端绑定本地端口监听回包
+
+        IPAddress gateway(192, 168, 4, 1);
+        WiFi.softAPConfig(gateway, gateway, IPAddress(255, 255, 255, 0));
+        WiFi.softAP(wifi_ssid, wifi_password, 11, 0, 4); // 信道11, 不隐藏, 最大4连接
+
+        udp.begin(udp_port);
     }
 
     bool check_connect() 
     { 
-        return this->device_connected; 
+        return device_connected; 
     }
 
     bool check_connect_chang()
@@ -218,6 +233,18 @@ public:
         bool ret = this->connect_changed;
         this->connect_changed = false;
         return ret;
+    }
+
+    const char* recv_message() 
+    {
+        if (rx_q_count > 0) 
+        {
+            const char* msg = this->rx_queue[this->rx_q_head];
+            this->rx_q_head = (this->rx_q_head + 1) % this->RX_QUEUE_SIZE;
+            this->rx_q_count -= 1;
+            return msg;
+        }
+        return "";
     }
 
     bool send_message(const char* data) 
@@ -230,6 +257,13 @@ public:
             {
                 memcpy(this->tx_buffer + this->tx_len, data, data_len);
                 this->tx_len += data_len;
+
+                // if (this->tx_len > 400)
+                // {
+                //     Serial.print("send");
+                //     Serial.println(this->tx_len);
+                // }
+
                 this->tx_buffer[this->tx_len] = '\0';
                 return true;
             }
@@ -242,32 +276,18 @@ public:
         return false;
     }
 
-    const char* recv_message() 
-    {
-        if (this->rx_q_count > 0) 
-        {
-            const char* msg = this->rx_queue[this->rx_q_head];
-            this->rx_q_head = (this->rx_q_head + 1) % this->RX_QUEUE_SIZE;
-            this->rx_q_count -= 1;
-            return msg;
-        }
-        return "";
-    }
-
     void loop_process() 
     {
         unsigned long current_time = millis();
+        handle_udp_peer(current_time);
 
-        check_reconnect(current_time);
-
-        if (this->device_connected) 
+        if (device_connected) 
         {
-            read_udp_data(current_time);
+            read_udp_data();
             ping_udp(current_time);
             send_udp_data(current_time);
         }
     }
 };
 
-
-#endif ESP32_UDP_WIFISERIAL_CLIENT_H
+#endif ESP32_UDP_WIFISERIAL_SERVER_H

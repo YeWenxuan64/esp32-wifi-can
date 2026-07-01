@@ -72,8 +72,8 @@
 esp32_WiFi_CAN/
 ├── README.md                     # 总览
 ├── LICENSE                       # MIT 许可证
-├── esp32_wifi_can_ap/            # AP 模式固件（CAN 网关）
-│   ├── esp32_twai-can.ino        # 主程序：SLCAN 解析 + TWAI CAN 驱动
+├── esp32_wifi_ap_twai/            # AP 模式固件（CAN 网关）
+│   ├── esp32_wifi_ap_twai.ino        # 主程序：SLCAN 解析 + TWAI CAN 驱动
 │   ├── esp32_wifi-ap.h           # UDP WiFi AP 服务端类
 │   └── esp32_neopixel-led.h      # 非阻塞 NeoPixel LED 控制类
 ├── esp32_wifi_sta/               # STA 模式固件（无线串口桥）
@@ -90,11 +90,13 @@ esp32_WiFi_CAN/
 
 ### 📋 硬件要求
 - **ESP32 系列开发板** ×2，支持以下任意型号（需内置 WiFi）：
-  - **ESP32**（经典款，如 ESP32-DevKitC / NodeMCU-32S）
-  - **ESP32-C3**（RISC-V 内核，如 ESP32-C3-DevKitM-1）
-  - **ESP32-C6**（RISC-V 内核，原生支持 WiFi 6）
-  - **ESP32-S3**（XTensa 双核，如 ESP32-S3-DevKitC-1）
+  - **ESP32 (classic) / ESP32-C3 / ESP32-C6 / ESP32-S3**
+
 - **CAN 收发器模块** ×1（如 SN65HVD230 / TJA1050，3.3V 兼容）
+  > ⚠️ **为什么必须外接 CAN 收发器？**  
+  > ESP32 内部仅有 **CAN 控制器**（即 TWAI — Two-Wire Automotive Interface），负责 CAN 协议的数字逻辑（位时序、仲裁、CRC、ACK 等）。它输出的是 3.3V TTL 数字信号（TX/RX），**不是** 差分 CAN 总线信号（CAN-H / CAN-L）。  
+  > CAN 收发器（Transceiver）则负责：将 TTL 信号转换为差分电压信号驱动 CAN 总线；提供总线仲裁所需的隐性/显性电平。
+
 - **USB 转串口模块**（用于 STA 端连接 PC；C3/C6/S3 板载 USB 可直接使用）
 - NeoPixel RGB LED ×1（可选，用于状态指示）
 
